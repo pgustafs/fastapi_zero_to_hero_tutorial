@@ -59,7 +59,7 @@ mkdir -p app/{api,core,models,schemas,services,tests}
 mkdir app/api/routes
 touch app/__init__.py
 touch app/api/routes/__init__.py
-touch app/{api,core,models,services,tests}/__init__.py
+touch app/{api,core,models,schemas,services,tests}/__init__.py
 ```
 
 **Project structure explained:**
