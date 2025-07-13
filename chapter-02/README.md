@@ -44,9 +44,12 @@ Create `app/models/user.py`:
 
 ```python
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from sqlmodel import Field, SQLModel, Relationship
 
+# Add this block to help the ruff linter understand the 'Bookmark' type
+if TYPE_CHECKING:
+    from .bookmark import Bookmark
 
 class UserBase(SQLModel):
     """Shared properties for User models"""
@@ -88,8 +91,6 @@ class UserUpdate(SQLModel):
     full_name: Optional[str] = Field(None, max_length=100)
     password: Optional[str] = Field(None, min_length=8, max_length=100)
 ```
-
------
 
 #### Dissecting the User Models 🧐
 
@@ -176,8 +177,6 @@ class BookmarkUpdate(SQLModel):
     tags: Optional[List[str]] = Field(None, max_items=10)
 ```
 
------
-
 #### Dissecting the Bookmark Models 🧐
 
   - `BookmarkBase`: Holds the core properties of a bookmark.
@@ -186,8 +185,6 @@ class BookmarkUpdate(SQLModel):
       - `owner`: A link back to the `User` who owns the bookmark.
       - `tags`: The many-to-many relationship to `Tag`s. We tell SQLModel to use our `BookmarkTag` class as the `link_model`. We also add `sa_relationship_kwargs={"cascade": "all, delete"}` to automatically delete the link table entries if a bookmark is deleted.
   - `TYPE_CHECKING`: The `if TYPE_CHECKING:` block prevents circular import errors. The code inside only runs during type checking, not at runtime, allowing our tools to understand the model relationships without the program crashing.
-
------
 
 ### Step 4: Create the Tag Model
 
@@ -233,15 +230,12 @@ class TagRead(TagBase):
     bookmark_count: Optional[int] = 0
 ```
 
------
-
 #### Dissecting the Tag Models 🧐
 
   - `TagBase`: Contains the essential `name` field for a tag, which we've made `unique` and indexed for fast lookups.
   - `Tag`: The database model (`table=True`). It defines the other side of the many-to-many relationship with `Bookmark`. The `back_populates="tags"` parameter links it to the `tags` attribute in the `Bookmark` model, making the relationship fully bidirectional.
   - `TagRead`: This schema defines what a tag looks like when we send it to a client. We've added a `bookmark_count`, a useful piece of data that we can compute later.
 
------
 
 ### Step 5: Create the Link Model for the Many-to-Many Relationship
 
@@ -304,11 +298,9 @@ __all__ = [
     "User", "UserCreate", "UserRead", "UserUpdate",
     "Bookmark", "BookmarkCreate", "BookmarkRead", "BookmarkUpdate",
     "Tag", "TagRead",
-    "BookmarkTag",  # Add BookmarkTag to __all__
+    "BookmarkTag",
 ]
 ```
-
------
 
 #### Dissecting the `__init__.py` File 🧐
 
@@ -317,7 +309,6 @@ This file turns the `models` directory into a Python package. Its purpose here i
 1.  **Control Import Order**: We import our models in a very specific sequence. We import `User` first, then the `BookmarkTag` link model, and finally the `Tag` and `Bookmark` models that depend on it. This solves the circular dependency problem definitively.
 2.  **Simplify Imports**: By defining `__all__`, we specify a public API for our models package. This allows us to use a simple import statement like `from app.models import User, Bookmark` elsewhere in our application, making the code cleaner and easier to read.
 
------
 
 ### Step 7: Database Configuration
 
@@ -362,7 +353,6 @@ def get_session():
         yield session
 ```
 
------
 
 #### Dissecting the Database Configuration 🧐
 
@@ -371,8 +361,6 @@ This file is the heart of our database connection.
   - `create_engine`: This function from SQLModel (via SQLAlchemy) creates the **engine**, which is the central point of communication with the database. We check if the `DATABASE_URL` is for SQLite or something else (like PostgreSQL) to apply specific connection settings. `echo=True` is great for development as it prints all the SQL queries being executed.
   - `init_db()`: A simple function that finds all our classes that inherit from `SQLModel` with `table=True` and creates the corresponding tables in the database.
   - `get_session()`: This is a generator function designed to be used as a FastAPI **dependency**. For each incoming API request, it will create a new database `Session`, `yield` it to the path operation function, and then automatically close the session when the request is finished. This ensures database connections are managed efficiently and safely.
-
------
 
 ### Step 8: Test Database Creation
 
@@ -447,8 +435,6 @@ Run the test:
 python test_db.py
 ```
 
------
-
 #### Dissecting the Test Script 🧐
 
 This script is a "smoke test" to ensure everything we've built so far works together.
@@ -460,8 +446,6 @@ This script is a "smoke test" to ensure everything we've built so far works toge
 5.  **Linking**: The crucial step where we create `BookmarkTag` instances to manually link the bookmark to its tags.
 6.  **Querying**: We use `select()` to build a query and `session.exec()` to run it, verifying that we can retrieve the data we just created.
 7.  **Cleanup**: We delete the objects we created to leave the database clean. Because we configured `cascade="all, delete"` on our `Bookmark` model's `tags` relationship, we only need to delete the main `Bookmark` object, and the `BookmarkTag` link entries are deleted automatically.
-
------
 
 ### 🧪 Explore Your Database
 
@@ -489,8 +473,6 @@ psql -U your_username -d your_database
 # Exit
 \q
 ```
-
------
 
 ### Step 9: Database Migrations with Alembic
 
@@ -520,13 +502,9 @@ smart-bookmarks/
 └── venv/
 ```
 
------
-
 #### Dissecting the Alembic Setup 🧐
 
 The `alembic init alembic` command creates a new `alembic` directory in our project. This directory contains configuration files and a `versions` folder. Alembic uses these files to manage our database schema. Instead of dropping and recreating tables every time we make a change, Alembic allows us to create incremental "migration" scripts, giving us version control for our database structure.
-
------
 
 Next, update `alembic/env.py` to connect Alembic to our app's models and database configuration.
 
@@ -535,7 +513,8 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 from sqlmodel import SQLModel
-from app.models import * # Import all models
+# Add a comment to tell the ruff linter to ignore this line
+from app.models import *  # noqa: F403
 from app.core.config import settings
 
 config = context.config
@@ -584,17 +563,13 @@ else:
     run_migrations_online()
 ```
 
------
-
-#### Dissecting `env.py` 🧐
+#### Dissecting `alembic/env.py` 🧐
 
 The `env.py` file is the main configuration script for Alembic. The key changes we made are:
 
 1.  **Import Models and Config**: We import our `settings` to get the database URL and `from app.models import *` to make Alembic aware of all our table definitions.
 2.  **Set Database URL**: We dynamically set the `sqlalchemy.url` for Alembic using the URL from our application's settings, ensuring they always use the same database.
 3.  **Set `target_metadata`**: This is the most important part. We point `target_metadata` to `SQLModel.metadata`. This tells Alembic to look at all the tables defined by our SQLModel classes when it compares our models to the current state of the database to auto-generate migration scripts.
-
------
 
 Finally, create your first migration to generate the tables in the database.
 
@@ -609,13 +584,174 @@ alembic upgrade head
 alembic current
 ```
 
------
-
 #### Dissecting the Migration Commands 🧐
 
   - `alembic revision --autogenerate -m "Initial tables"`: This command compares our SQLModels against the (currently empty) database. It sees that the `users`, `tags`, `bookmarks`, and `bookmark_tags` tables are missing and **auto-generates** a new Python script in the `alembic/versions` folder. This script contains the `upgrade()` and `downgrade()` functions to create or drop these tables. The `-m` flag adds a descriptive message.
   - `alembic upgrade head`: This command takes the latest migration script (referenced by `head`) and executes its `upgrade()` function, applying the changes to our database. In this case, it will run the `CREATE TABLE` commands.
   - `alembic current`: A utility command to show which migration version is currently applied to the database.
+
+Of course. Here is the finalized version of Chapter 2, updated with a new section on automated model testing with `pytest` and a final step to commit your progress to Git.
+
+### Step 10: Automated Tests for Models
+
+The `test_db.py` script is great for a quick manual check, but for a robust application, we need automated tests. We'll use `pytest` to create unit tests for our models to verify that the fields, relationships, and database constraints work as expected.
+
+**Why Test Models?**
+While API tests check the whole system, model tests are focused and fast. They confirm the correctness of your data structure—the very foundation of your application—in isolation.
+
+#### Create a Shared Test Fixture
+
+To avoid duplicating code, we'll place our test database fixture in a special `pytest` file called `conftest.py`. Fixtures in this file are automatically available to all tests.
+
+Create a new file, `app/tests/conftest.py`:
+
+```python
+import pytest
+from sqlmodel import Session, create_engine, SQLModel
+from sqlmodel.pool import StaticPool
+
+@pytest.fixture(name="session")
+def session_fixture():
+    """Create a fresh, in-memory database session for each test."""
+    engine = create_engine(
+        "sqlite://", 
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        yield session
+    SQLModel.metadata.drop_all(engine)
+```
+
+#### Dissecting `conftest.py` 🧐
+
+  - **`conftest.py`**: This is a special `pytest` file. Any fixtures you define here are automatically discovered and can be used by any test file in the same directory and subdirectories without needing to be imported. It's the perfect place for shared setup code like a database connection.
+  - **`session_fixture`**: This fixture sets up a clean, in-memory SQLite database, creates all your SQLModel tables, yields a session for the test to use, and then tears down the entire database afterward. This ensures every single test runs in complete isolation.
+
+#### Create the Model Test File
+
+Now, let's write the actual tests.
+
+Create a new file, `app/tests/test_models.py`:
+
+```python
+from sqlmodel import Session
+from app.models import User, Bookmark, Tag, BookmarkTag
+
+def test_create_user(session: Session):
+    """Test creating a User model and saving it to the database."""
+    user = User(
+        username="testuser", 
+        email="test@example.com", 
+        hashed_password="fakehash"
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    assert user.id is not None
+    assert user.username == "testuser"
+    assert user.created_at is not None
+
+def test_create_bookmark(session: Session):
+    """Test creating a Bookmark linked to a User."""
+    user = User(
+        username="testuser2", 
+        email="test2@example.com", 
+        hashed_password="fakehash"
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    bookmark = Bookmark(
+        url="https://example.com",
+        title="Example",
+        user_id=user.id,
+        owner=user
+    )
+    session.add(bookmark)
+    session.commit()
+    session.refresh(bookmark)
+
+    assert bookmark.id is not None
+    assert bookmark.user_id == user.id
+    assert bookmark.owner.username == "testuser2"
+
+def test_create_bookmark_with_tags(session: Session):
+    """Test creating a bookmark with a many-to-many tag relationship."""
+    # 1. Arrange: Create and commit the user first to get an ID
+    user = User(username="taguser", email="tag@example.com", hashed_password="hash")
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    # 2. Now create the other objects using the valid user.id
+    tag1 = Tag(name="python")
+    tag2 = Tag(name="fastapi")
+    bookmark = Bookmark(url="https://tiangolo.com", title="Typer", user_id=user.id)
+    
+    # 3. Add the new objects and commit again
+    session.add(tag1)
+    session.add(tag2)
+    session.add(bookmark)
+    session.commit()
+    
+    # Refresh to make sure all objects have IDs from the DB
+    session.refresh(tag1)
+    session.refresh(tag2)
+    session.refresh(bookmark)
+
+    # 4. Link them using the association table
+    link1 = BookmarkTag(bookmark_id=bookmark.id, tag_id=tag1.id)
+    link2 = BookmarkTag(bookmark_id=bookmark.id, tag_id=tag2.id)
+    session.add(link1)
+    session.add(link2)
+    session.commit()
+
+    # Refresh the bookmark to load the 'tags' relationship
+    session.refresh(bookmark)
+
+    # 5. Assert: Check if the relationships work
+    assert len(bookmark.tags) == 2
+    assert bookmark.tags[0].name == "python"
+    assert bookmark.tags[1].name == "fastapi"
+```
+
+#### Run Your New Tests
+
+From your project's root directory, run the tests:
+
+```bash
+pytest app/tests/test_models.py -v
+```
+
+You should see all three tests pass\!
+
+#### Dissecting the Model Tests 🧐
+
+  - **Direct Database Interaction**: Unlike API tests which use an HTTP client, these tests interact directly with the database `session` provided by our fixture. This allows us to test the model layer in isolation.
+  - **Arrange, Act, Assert**: Each test follows this classic pattern. We first arrange the data by creating model instances, then act by adding them to the session and committing, and finally assert that the results are what we expect.
+  - **`session.commit()`**: This command saves all pending changes (like new objects) to the database and assigns database-generated values like primary keys (`id`).
+  - **`session.refresh(obj)`**: After committing, we use `refresh()` to update our Python object (`user`, `bookmark`, etc.) with the new data from the database, such as the `id` and default `created_at` timestamp. This is essential for testing database-generated values.
+
+### Step 11: Commit Your Progress
+
+You've completed all the data modeling, database setup, and initial testing for the project. This is a perfect milestone to save your work to Git.
+
+```bash
+# Add all new and modified files to Git
+git add .
+
+# Create a commit with a descriptive message
+git commit -m "feat: Add database models, migrations, and tests"
+
+# Push your changes to your GitHub repository
+git push origin main
+```
+
+Your CI pipeline on GitHub Actions will now run and should pass, confirming that your new tests work and your code quality checks are met.
 
 ### Understanding What We Built
 
