@@ -41,6 +41,7 @@ from fastapi import Depends, HTTPException, status
 from sqlmodel import Session
 from app.core.database import engine
 from app.core.config import settings
+from app.core.database import get_session
 from app.models import User
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -48,14 +49,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 security = HTTPBearer()
 
 
-def get_db() -> Generator[Session, None, None]:
-    """Dependency to get database session"""
-    with Session(engine) as session:
-        yield session
-
-
-# Type alias for database session dependency
-SessionDep = Annotated[Session, Depends(get_db)]
+# Alias for DB session dependency
+SessionDep = Annotated[Session, Depends(get_session)]
 
 
 async def get_current_user(
@@ -329,7 +324,7 @@ def create_bookmark(
     if bookmark_in.tags:
         for tag_name in bookmark_in.tags:
             # Get or create tag
-            tag = db.exec(select(Tag).where(Tag.name == tag_name)).first()
+            tag = db.exec(select(Tag).where(Tag.name == tag_name.lower())).first()
             if not tag:
                 tag = Tag(name=tag_name.lower())
                 db.add(tag)
@@ -344,10 +339,12 @@ def create_bookmark(
             db.add(bookmark_tag)
         
         db.commit()
+        # Refresh the bookmark again to load the new tag relationships
+        db.refresh(bookmark)
     
-    # Return with tags
+    # Exclude the 'tags' relationship from the model_dump
     return BookmarkRead(
-        **bookmark.model_dump(),
+        **bookmark.model_dump(exclude={"tags"}), 
         tags=[tag.name for tag in bookmark.tags]
     )
 
