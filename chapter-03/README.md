@@ -258,7 +258,13 @@ async def lifespan(app: FastAPI):
     yield
     print("App shutdown...")
 
-# ... app ...
+app = FastAPI(
+    title=settings.PROJECT_NAME,  # Change
+    description=settings.PROJECT_DESCRIPTION,
+    version=settings.VERSION,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    lifespan=lifespan, # Add this line
+)
 
 # ... CORS middleware ...
 
